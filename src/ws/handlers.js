@@ -142,6 +142,25 @@ export function registerHandlers(io) {
         });
 
         // ═══════════════════════════════════════════════════════════
+        // STREAMING: Agente envía texto parcial (turno activo)
+        // ═══════════════════════════════════════════════════════════
+        socket.on('message_update', (data) => {
+            const { sectionType } = data;
+            // Solo reenviar tipos visibles (NO thinking/status)
+            if (config.pushableTypes.has(sectionType)) {
+                socket.to(room).emit('message_update', data);
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        // STOP: Flutter pide detener generación al agente
+        // ═══════════════════════════════════════════════════════════
+        socket.on('stop_generation', (data) => {
+            log.info(`[STOP] ${socket.email} solicita detener generación`);
+            socket.to(room).emit('stop_generation', data);
+        });
+
+        // ═══════════════════════════════════════════════════════════
         // SESIONES: relay del agente para Flutter
         // ═══════════════════════════════════════════════════════════
         socket.on('update_sessions', (data) => {

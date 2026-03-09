@@ -21,17 +21,17 @@ export function registerHandlers(io) {
         // AGENTE → SERVER: guardar mensaje con dedup UUID
         // ═══════════════════════════════════════════════════════════
         socket.on('save_message', async (data) => {
-            const { uuid, sessionId, sectionType, text, html, hasCode, buttons } = data;
+            const { uuid, sessionId, sectionType, text, html, hasCode, buttons, isVisible } = data;
 
             if (!uuid || !sessionId || !text) {
                 log.warn('save_message rechazado: faltan campos');
                 return;
             }
 
-            const result = await saveMessage(uuid, sessionId, sectionType, text, hasCode, buttons, html || '');
+            const result = await saveMessage(uuid, sessionId, sectionType, text, hasCode, buttons, html || '', isVisible !== false);
 
             if (result.isNew) {
-                log.info(`[NEW] ${sectionType} seq=${result.seq} para ${sessionId.substring(0, 8)}...`);
+                log.info(`[NEW] ${sectionType} seq=${result.seq} visible=${isVisible !== false} para ${sessionId.substring(0, 8)}...`);
 
                 // FILTRADO SERVER-SIDE (patrón Mattermost): solo pushear tipos visibles
                 if (config.pushableTypes.has(sectionType)) {
@@ -46,6 +46,7 @@ export function registerHandlers(io) {
                             html: html || '',
                             hasCode: hasCode || false,
                             buttons: buttons || [],
+                            isVisible: isVisible !== false,
                             timestamp: new Date().toISOString(),
                         },
                     });

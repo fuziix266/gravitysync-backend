@@ -6,14 +6,14 @@ import log from '../utils/logger.js';
  * ON CONFLICT DO NOTHING → idempotente.
  * Retorna { isNew, seq, id } si insertó, o { isNew: false } si era duplicado.
  */
-export async function saveMessage(uuid, sessionId, sectionType, text, hasCode = false, buttons = [], html = '') {
+export async function saveMessage(uuid, sessionId, sectionType, text, hasCode = false, buttons = [], html = '', isVisible = true) {
     try {
         const result = await pool.query(
-            `INSERT INTO chat_messages (uuid, session_id, section_type, text, has_code, buttons, html)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO chat_messages (uuid, session_id, section_type, text, has_code, buttons, html, is_visible)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (uuid) DO NOTHING
              RETURNING id, seq`,
-            [uuid, sessionId, sectionType, text, hasCode, JSON.stringify(buttons), html || '']
+            [uuid, sessionId, sectionType, text, hasCode, JSON.stringify(buttons), html || '', isVisible]
         );
 
         if (result.rowCount > 0) {
@@ -46,7 +46,7 @@ export async function saveMessage(uuid, sessionId, sectionType, text, hasCode = 
  */
 export async function getMessages(sessionId, { limit = 15, offset = 0, includeThinking = false } = {}) {
     try {
-        const typeFilter = includeThinking ? '' : "AND section_type NOT IN ('thinking', 'status')";
+        const typeFilter = includeThinking ? '' : "AND section_type NOT IN ('thinking', 'status') AND is_visible = TRUE";
 
         const countResult = await pool.query(
             `SELECT COUNT(*) as total FROM chat_messages WHERE session_id = $1 ${typeFilter}`,
@@ -55,7 +55,7 @@ export async function getMessages(sessionId, { limit = 15, offset = 0, includeTh
         const total = parseInt(countResult.rows[0].total);
 
         const result = await pool.query(
-            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, created_at
+            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, is_visible, created_at
              FROM chat_messages
              WHERE session_id = $1 ${typeFilter}
              ORDER BY seq DESC
@@ -80,10 +80,10 @@ export async function getMessages(sessionId, { limit = 15, offset = 0, includeTh
  */
 export async function getMessagesSince(sessionId, lastSeq, { includeThinking = false } = {}) {
     try {
-        const typeFilter = includeThinking ? '' : "AND section_type NOT IN ('thinking', 'status')";
+        const typeFilter = includeThinking ? '' : "AND section_type NOT IN ('thinking', 'status') AND is_visible = TRUE";
 
         const result = await pool.query(
-            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, created_at
+            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, is_visible, created_at
              FROM chat_messages
              WHERE session_id = $1 AND seq > $2 ${typeFilter}
              ORDER BY seq ASC`,
@@ -138,6 +138,7 @@ function formatMessage(r) {
         html: r.html || '',
         hasCode: r.has_code,
         buttons: r.buttons || [],
+        isVisible: r.is_visible !== false,
         timestamp: r.created_at,
     };
 }

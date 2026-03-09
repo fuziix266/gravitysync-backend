@@ -1,5 +1,5 @@
 import { getUserRoom } from './server.js';
-import { saveMessage, getMessages, getMessagesSince } from '../db/messages.js';
+import { saveMessage, getMessages, getMessagesSince, getSessions } from '../db/messages.js';
 import config from '../config.js';
 import log from '../utils/logger.js';
 
@@ -21,14 +21,14 @@ export function registerHandlers(io) {
         // AGENTE → SERVER: guardar mensaje con dedup UUID
         // ═══════════════════════════════════════════════════════════
         socket.on('save_message', async (data) => {
-            const { uuid, sessionId, sectionType, text, hasCode, buttons } = data;
+            const { uuid, sessionId, sectionType, text, html, hasCode, buttons } = data;
 
             if (!uuid || !sessionId || !text) {
                 log.warn('save_message rechazado: faltan campos');
                 return;
             }
 
-            const result = await saveMessage(uuid, sessionId, sectionType, text, hasCode, buttons);
+            const result = await saveMessage(uuid, sessionId, sectionType, text, hasCode, buttons, html || '');
 
             if (result.isNew) {
                 log.info(`[NEW] ${sectionType} seq=${result.seq} para ${sessionId.substring(0, 8)}...`);
@@ -43,6 +43,7 @@ export function registerHandlers(io) {
                             uuid,
                             sectionType,
                             text,
+                            html: html || '',
                             hasCode: hasCode || false,
                             buttons: buttons || [],
                             timestamp: new Date().toISOString(),
@@ -165,6 +166,17 @@ export function registerHandlers(io) {
         // ═══════════════════════════════════════════════════════════
         socket.on('update_sessions', (data) => {
             socket.to(room).emit('sessions_list', data);
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        // FLUTTER → SERVER: solicitar sesiones desde BD (on-connect pull)
+        // ═══════════════════════════════════════════════════════════
+        socket.on('request_sessions', async () => {
+            log.info(`[SESSIONS] ${socket.email} solicita sesiones activas`);
+            // Relay al agente local → el agente re-escanea CDP y emite update_sessions
+            socket.to(room).emit('request_sessions', {
+                timestamp: new Date().toISOString(),
+            });
         });
 
         // ═══════════════════════════════════════════════════════════

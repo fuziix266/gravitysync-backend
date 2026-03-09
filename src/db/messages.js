@@ -6,14 +6,14 @@ import log from '../utils/logger.js';
  * ON CONFLICT DO NOTHING → idempotente.
  * Retorna { isNew, seq, id } si insertó, o { isNew: false } si era duplicado.
  */
-export async function saveMessage(uuid, sessionId, sectionType, text, hasCode = false, buttons = []) {
+export async function saveMessage(uuid, sessionId, sectionType, text, hasCode = false, buttons = [], html = '') {
     try {
         const result = await pool.query(
-            `INSERT INTO chat_messages (uuid, session_id, section_type, text, has_code, buttons)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO chat_messages (uuid, session_id, section_type, text, has_code, buttons, html)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (uuid) DO NOTHING
              RETURNING id, seq`,
-            [uuid, sessionId, sectionType, text, hasCode, JSON.stringify(buttons)]
+            [uuid, sessionId, sectionType, text, hasCode, JSON.stringify(buttons), html || '']
         );
 
         if (result.rowCount > 0) {
@@ -55,7 +55,7 @@ export async function getMessages(sessionId, { limit = 15, offset = 0, includeTh
         const total = parseInt(countResult.rows[0].total);
 
         const result = await pool.query(
-            `SELECT id, seq, uuid, section_type, text, has_code, buttons, created_at
+            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, created_at
              FROM chat_messages
              WHERE session_id = $1 ${typeFilter}
              ORDER BY seq DESC
@@ -83,7 +83,7 @@ export async function getMessagesSince(sessionId, lastSeq, { includeThinking = f
         const typeFilter = includeThinking ? '' : "AND section_type NOT IN ('thinking', 'status')";
 
         const result = await pool.query(
-            `SELECT id, seq, uuid, section_type, text, has_code, buttons, created_at
+            `SELECT id, seq, uuid, section_type, text, has_code, buttons, html, created_at
              FROM chat_messages
              WHERE session_id = $1 AND seq > $2 ${typeFilter}
              ORDER BY seq ASC`,
@@ -107,9 +107,16 @@ export async function getSessions() {
     try {
         const result = await pool.query(
             `SELECT s.session_id, s.title, s.last_seq, s.message_count, s.updated_at,
-                    m.text as last_message, m.section_type as last_type
+                    m.text as last_message, m.section_type as last_type,
+                    first_msg.text as first_user_message
              FROM chat_sessions s
              LEFT JOIN chat_messages m ON m.seq = s.last_seq
+             LEFT JOIN LATERAL (
+                SELECT text FROM chat_messages
+                WHERE session_id = s.session_id AND section_type = 'user'
+                ORDER BY seq ASC LIMIT 1
+             ) first_msg ON true
+             WHERE s.message_count > 1
              ORDER BY s.updated_at DESC
              LIMIT 50`
         );
@@ -128,6 +135,7 @@ function formatMessage(r) {
         uuid: r.uuid,
         sectionType: r.section_type,
         text: r.text,
+        html: r.html || '',
         hasCode: r.has_code,
         buttons: r.buttons || [],
         timestamp: r.created_at,
